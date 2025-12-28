@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Threading;
@@ -14,6 +14,7 @@ namespace WebPush
         ///     to sendNotification()
         /// </summary>
         /// <param name="gcmApiKey">The API key to send with the GCM request.</param>
+        [Obsolete("GCM is deprecated since 2019. Use FCM with VAPID authentication instead.")]
         void SetGcmApiKey(string gcmApiKey);
 
         /// <summary>
@@ -35,6 +36,16 @@ namespace WebPush
         void SetVapidDetails(string subject, string publicKey, string privateKey);
 
         /// <summary>
+        ///     Generate request details for a push notification using the new options class.
+        /// </summary>
+        /// <param name="subscription">The PushSubscription you wish to send the notification to.</param>
+        /// <param name="payload">The payload you wish to send to the user</param>
+        /// <param name="options">Options for the push message including VAPID, TTL, urgency, topic, and encoding.</param>
+        /// <returns>A HttpRequestMessage object that can be sent.</returns>
+        HttpRequestMessage GenerateRequestDetails(PushSubscription subscription, string payload,
+            PushMessageOptions options = null);
+
+        /// <summary>
         ///     To get a request without sending a push notification call this method.
         ///     This method will throw an ArgumentException if there is an issue with the input.
         /// </summary>
@@ -45,8 +56,18 @@ namespace WebPush
         ///     notification.
         /// </param>
         /// <returns>A HttpRequestMessage object that can be sent.</returns>
+        [Obsolete("Use the overload with PushMessageOptions instead.")]
         HttpRequestMessage GenerateRequestDetails(PushSubscription subscription, string payload,
             Dictionary<string, object> options = null);
+
+        /// <summary>
+        ///     To send a push notification call this method with a subscription, optional payload and any options
+        ///     Will exception if unsuccessful
+        /// </summary>
+        /// <param name="subscription">The PushSubscription you wish to send the notification to.</param>
+        /// <param name="payload">The payload you wish to send to the user</param>
+        /// <param name="options">Options for the push message including VAPID, TTL, urgency, topic, and encoding.</param>
+        void SendNotification(PushSubscription subscription, string payload, PushMessageOptions options);
 
         /// <summary>
         ///     To send a push notification call this method with a subscription, optional payload and any options
@@ -58,6 +79,7 @@ namespace WebPush
         ///     Options for the GCM API key and vapid keys can be passed in if they are unique for each
         ///     notification.
         /// </param>
+        [Obsolete("Use the overload with PushMessageOptions instead.")]
         void SendNotification(PushSubscription subscription, string payload = null,
             Dictionary<string, object> options = null);
 
@@ -77,7 +99,19 @@ namespace WebPush
         /// <param name="subscription">The PushSubscription you wish to send the notification to.</param>
         /// <param name="payload">The payload you wish to send to the user</param>
         /// <param name="gcmApiKey">The GCM API key</param>
+        [Obsolete("GCM is deprecated since 2019. Use FCM with VAPID authentication instead.")]
         void SendNotification(PushSubscription subscription, string payload, string gcmApiKey);
+
+        /// <summary>
+        ///     To send a push notification asynchronous call this method with a subscription, optional payload and any options
+        ///     Will exception if unsuccessful
+        /// </summary>
+        /// <param name="subscription">The PushSubscription you wish to send the notification to.</param>
+        /// <param name="payload">The payload you wish to send to the user</param>
+        /// <param name="options">Options for the push message including VAPID, TTL, urgency, topic, and encoding.</param>
+        /// <param name="cancellationToken">The cancellation token to cancel operation.</param>
+        Task SendNotificationAsync(PushSubscription subscription, string payload,
+            PushMessageOptions options, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     To send a push notification asynchronous call this method with a subscription, optional payload and any options
@@ -90,8 +124,9 @@ namespace WebPush
         ///     notification.
         /// </param>
         /// <param name="cancellationToken">The cancellation token to cancel operation.</param>
+        [Obsolete("Use the overload with PushMessageOptions instead.")]
         Task SendNotificationAsync(PushSubscription subscription, string payload = null,
-            Dictionary<string, object> options = null, CancellationToken cancellationToken=default);
+            Dictionary<string, object> options = null, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     To send a push notification asynchronous call this method with a subscription, optional payload and any options
@@ -102,7 +137,7 @@ namespace WebPush
         /// <param name="vapidDetails">The vapid details for the notification.</param>
         /// <param name="cancellationToken"></param>
         Task SendNotificationAsync(PushSubscription subscription, string payload,
-            VapidDetails vapidDetails, CancellationToken cancellationToken=default);
+            VapidDetails vapidDetails, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     To send a push notification asynchronous call this method with a subscription, optional payload and any options
@@ -112,6 +147,8 @@ namespace WebPush
         /// <param name="payload">The payload you wish to send to the user</param>
         /// <param name="gcmApiKey">The GCM API key</param>
         /// <param name="cancellationToken"></param>
-        Task SendNotificationAsync(PushSubscription subscription, string payload, string gcmApiKey, CancellationToken cancellationToken=default);
+        [Obsolete("GCM is deprecated since 2019. Use FCM with VAPID authentication instead.")]
+        Task SendNotificationAsync(PushSubscription subscription, string payload, string gcmApiKey,
+            CancellationToken cancellationToken = default);
     }
 }

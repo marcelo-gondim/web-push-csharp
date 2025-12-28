@@ -24,6 +24,7 @@ namespace WebPush
         /// <summary>
         ///     This method takes the required VAPID parameters and returns the required
         ///     header to be added to a Web Push Protocol Request.
+        ///     Uses legacy aesgcm format (WebPush + Crypto-Key headers).
         /// </summary>
         /// <param name="audience">This must be the origin of the push service.</param>
         /// <param name="subject">This should be a URL or a 'mailto:' email address</param>
@@ -33,6 +34,23 @@ namespace WebPush
         /// <returns>A dictionary of header key/value pairs.</returns>
         public static Dictionary<string, string> GetVapidHeaders(string audience, string subject, string publicKey,
             string privateKey, long expiration = -1)
+        {
+            return GetVapidHeaders(audience, subject, publicKey, privateKey, expiration, ContentEncoding.AesGcm);
+        }
+
+        /// <summary>
+        ///     This method takes the required VAPID parameters and returns the required
+        ///     header to be added to a Web Push Protocol Request.
+        /// </summary>
+        /// <param name="audience">This must be the origin of the push service.</param>
+        /// <param name="subject">This should be a URL or a 'mailto:' email address</param>
+        /// <param name="publicKey">The VAPID public key as a base64 encoded string</param>
+        /// <param name="privateKey">The VAPID private key as a base64 encoded string</param>
+        /// <param name="expiration">The expiration of the VAPID JWT.</param>
+        /// <param name="contentEncoding">The content encoding format (affects VAPID header format).</param>
+        /// <returns>A dictionary of header key/value pairs.</returns>
+        public static Dictionary<string, string> GetVapidHeaders(string audience, string subject, string publicKey,
+            string privateKey, long expiration, ContentEncoding contentEncoding)
         {
             ValidateAudience(audience);
             ValidateSubject(subject);
@@ -47,23 +65,32 @@ namespace WebPush
             }
             else
             {
-                ValidateExpiration(expiration);                
+                ValidateExpiration(expiration);
             }
 
-
             var header = new Dictionary<string, object> {{"typ", "JWT"}, {"alg", "ES256"}};
-
             var jwtPayload = new Dictionary<string, object> {{"aud", audience}, {"exp", expiration}, {"sub", subject}};
 
             using var signer = new JwsSigner(decodedPrivateKey);
             var token = signer.GenerateSignature(header, jwtPayload);
 
-            var results = new Dictionary<string, string>
+            if (contentEncoding == ContentEncoding.Aes128Gcm)
             {
-                {"Authorization", "WebPush " + token}, {"Crypto-Key", "p256ecdsa=" + publicKey}
-            };
-
-            return results;
+                // RFC 8292: vapid t=<token>, k=<publicKey>
+                return new Dictionary<string, string>
+                {
+                    {"Authorization", $"vapid t={token}, k={publicKey}"}
+                };
+            }
+            else
+            {
+                // Legacy aesgcm format: WebPush <token> + Crypto-Key header
+                return new Dictionary<string, string>
+                {
+                    {"Authorization", "WebPush " + token},
+                    {"Crypto-Key", "p256ecdsa=" + publicKey}
+                };
+            }
         }
 
         public static void ValidateAudience(string audience)

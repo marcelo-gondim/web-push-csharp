@@ -180,5 +180,164 @@ namespace WebPush.Test
             client.SetVapidDetails(TestSubject, TestPublicKey, TestPrivateKey);
             client.SendNotification(subscription, "123");
         }
+
+        [TestMethod]
+        public void TestPushMessageOptionsBasic()
+        {
+            client.SetVapidDetails(TestSubject, TestPublicKey, TestPrivateKey);
+            var subscription = new PushSubscription(TestFirefoxEndpoint, TestPublicKey, TestPrivateKey);
+            var options = new PushMessageOptions
+            {
+                TTL = 3600
+            };
+            var message = client.GenerateRequestDetails(subscription, @"test payload", options);
+            var ttlHeader = message.Headers.GetValues(@"TTL").First();
+
+            Assert.AreEqual("3600", ttlHeader);
+        }
+
+        [TestMethod]
+        public void TestUrgencyHeader()
+        {
+            client.SetVapidDetails(TestSubject, TestPublicKey, TestPrivateKey);
+            var subscription = new PushSubscription(TestFirefoxEndpoint, TestPublicKey, TestPrivateKey);
+
+            // Test High urgency
+            var optionsHigh = new PushMessageOptions { Urgency = PushUrgency.High };
+            var messageHigh = client.GenerateRequestDetails(subscription, @"test", optionsHigh);
+            Assert.AreEqual("high", messageHigh.Headers.GetValues("Urgency").First());
+
+            // Test Low urgency
+            var optionsLow = new PushMessageOptions { Urgency = PushUrgency.Low };
+            var messageLow = client.GenerateRequestDetails(subscription, @"test", optionsLow);
+            Assert.AreEqual("low", messageLow.Headers.GetValues("Urgency").First());
+
+            // Test VeryLow urgency
+            var optionsVeryLow = new PushMessageOptions { Urgency = PushUrgency.VeryLow };
+            var messageVeryLow = client.GenerateRequestDetails(subscription, @"test", optionsVeryLow);
+            Assert.AreEqual("very-low", messageVeryLow.Headers.GetValues("Urgency").First());
+
+            // Normal urgency should not add header (default)
+            var optionsNormal = new PushMessageOptions { Urgency = PushUrgency.Normal };
+            var messageNormal = client.GenerateRequestDetails(subscription, @"test", optionsNormal);
+            Assert.IsFalse(messageNormal.Headers.TryGetValues("Urgency", out _));
+        }
+
+        [TestMethod]
+        public void TestTopicHeader()
+        {
+            client.SetVapidDetails(TestSubject, TestPublicKey, TestPrivateKey);
+            var subscription = new PushSubscription(TestFirefoxEndpoint, TestPublicKey, TestPrivateKey);
+
+            var options = new PushMessageOptions { Topic = "my-topic" };
+            var message = client.GenerateRequestDetails(subscription, @"test", options);
+            var topicHeader = message.Headers.GetValues("Topic").First();
+
+            Assert.AreEqual("my-topic", topicHeader);
+        }
+
+        [TestMethod]
+        public void TestTopicHeaderMaxLength()
+        {
+            client.SetVapidDetails(TestSubject, TestPublicKey, TestPrivateKey);
+            var subscription = new PushSubscription(TestFirefoxEndpoint, TestPublicKey, TestPrivateKey);
+
+            // Topic longer than 32 characters should throw
+            var options = new PushMessageOptions { Topic = "this-is-a-very-long-topic-that-exceeds-32-chars" };
+            Assert.Throws<ArgumentException>(
+                () => client.GenerateRequestDetails(subscription, @"test", options));
+        }
+
+        [TestMethod]
+        public void TestAes128GcmEncoding()
+        {
+            client.SetVapidDetails(TestSubject, TestPublicKey, TestPrivateKey);
+            var subscription = new PushSubscription(TestFirefoxEndpoint, TestPublicKey, TestPrivateKey);
+
+            var options = new PushMessageOptions { ContentEncoding = ContentEncoding.Aes128Gcm };
+            var message = client.GenerateRequestDetails(subscription, @"test payload", options);
+
+            // Check Content-Encoding header
+            var contentEncoding = message.Content.Headers.ContentEncoding.First();
+            Assert.AreEqual("aes128gcm", contentEncoding);
+
+            // aes128gcm should NOT have Encryption header
+            Assert.IsFalse(message.Headers.TryGetValues("Encryption", out _));
+
+            // Authorization header should use "vapid t=..., k=..." format
+            var authHeader = message.Headers.GetValues("Authorization").First();
+            Assert.IsTrue(authHeader.StartsWith("vapid t="));
+        }
+
+        [TestMethod]
+        public void TestAesGcmEncoding()
+        {
+            client.SetVapidDetails(TestSubject, TestPublicKey, TestPrivateKey);
+            var subscription = new PushSubscription(TestFirefoxEndpoint, TestPublicKey, TestPrivateKey);
+
+            var options = new PushMessageOptions { ContentEncoding = ContentEncoding.AesGcm };
+            var message = client.GenerateRequestDetails(subscription, @"test payload", options);
+
+            // Check Content-Encoding header
+            var contentEncoding = message.Content.Headers.ContentEncoding.First();
+            Assert.AreEqual("aesgcm", contentEncoding);
+
+            // aesgcm should have Encryption header
+            Assert.IsTrue(message.Headers.TryGetValues("Encryption", out var encryptionValues));
+            Assert.IsTrue(encryptionValues.First().StartsWith("salt="));
+
+            // Crypto-Key header should contain both dh and p256ecdsa
+            var cryptoKeyHeader = message.Headers.GetValues("Crypto-Key").First();
+            Assert.IsTrue(cryptoKeyHeader.Contains("dh="));
+            Assert.IsTrue(cryptoKeyHeader.Contains("p256ecdsa="));
+
+            // Authorization header should use "WebPush ..." format
+            var authHeader = message.Headers.GetValues("Authorization").First();
+            Assert.IsTrue(authHeader.StartsWith("WebPush "));
+        }
+
+        [TestMethod]
+        public void TestDefaultEncodingIsAes128Gcm()
+        {
+            client.SetVapidDetails(TestSubject, TestPublicKey, TestPrivateKey);
+            var subscription = new PushSubscription(TestFirefoxEndpoint, TestPublicKey, TestPrivateKey);
+
+            // PushMessageOptions default should be Aes128Gcm
+            var options = new PushMessageOptions();
+            var message = client.GenerateRequestDetails(subscription, @"test payload", options);
+
+            var contentEncoding = message.Content.Headers.ContentEncoding.First();
+            Assert.AreEqual("aes128gcm", contentEncoding);
+        }
+
+        [TestMethod]
+        public void TestVapidDetailsInOptions()
+        {
+            var subscription = new PushSubscription(TestFirefoxEndpoint, TestPublicKey, TestPrivateKey);
+            var vapidDetails = new VapidDetails(TestSubject, TestPublicKey, TestPrivateKey);
+            var options = new PushMessageOptions { VapidDetails = vapidDetails };
+            var message = client.GenerateRequestDetails(subscription, @"test payload", options);
+
+            Assert.IsTrue(message.Headers.TryGetValues("Authorization", out _));
+        }
+
+        [TestMethod]
+        public void TestCustomHeaders()
+        {
+            client.SetVapidDetails(TestSubject, TestPublicKey, TestPrivateKey);
+            var subscription = new PushSubscription(TestFirefoxEndpoint, TestPublicKey, TestPrivateKey);
+
+            var options = new PushMessageOptions
+            {
+                Headers = new Dictionary<string, string>
+                {
+                    { "X-Custom-Header", "custom-value" }
+                }
+            };
+            var message = client.GenerateRequestDetails(subscription, @"test payload", options);
+            var customHeader = message.Headers.GetValues("X-Custom-Header").First();
+
+            Assert.AreEqual("custom-value", customHeader);
+        }
     }
 }

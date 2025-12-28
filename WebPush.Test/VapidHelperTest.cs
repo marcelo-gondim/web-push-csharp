@@ -109,5 +109,57 @@ namespace WebPush.Test
                 () => VapidHelper.GetVapidHeaders(ValidAudience, ValidSubjectMailto, publicKey,
                     privateKey, 1552715607));
         }
+
+        [TestMethod]
+        public void TestGetVapidHeadersAes128Gcm()
+        {
+            var publicKey = TestPublicKey;
+            var privateKey = TestPrivateKey;
+            var headers = VapidHelper.GetVapidHeaders(ValidAudience, ValidSubject, publicKey, privateKey,
+                -1, ContentEncoding.Aes128Gcm);
+
+            // aes128gcm format: only Authorization header with "vapid t=<token>, k=<key>"
+            Assert.IsTrue(headers.ContainsKey(@"Authorization"));
+            Assert.IsFalse(headers.ContainsKey(@"Crypto-Key"));
+
+            var authHeader = headers[@"Authorization"];
+            Assert.IsTrue(authHeader.StartsWith("vapid t="));
+            Assert.IsTrue(authHeader.Contains(", k=" + publicKey));
+        }
+
+        [TestMethod]
+        public void TestGetVapidHeadersAesGcm()
+        {
+            var publicKey = TestPublicKey;
+            var privateKey = TestPrivateKey;
+            var headers = VapidHelper.GetVapidHeaders(ValidAudience, ValidSubject, publicKey, privateKey,
+                -1, ContentEncoding.AesGcm);
+
+            // aesgcm format: Authorization with "WebPush <token>" + Crypto-Key header
+            Assert.IsTrue(headers.ContainsKey(@"Authorization"));
+            Assert.IsTrue(headers.ContainsKey(@"Crypto-Key"));
+
+            var authHeader = headers[@"Authorization"];
+            Assert.IsTrue(authHeader.StartsWith("WebPush "));
+
+            var cryptoKey = headers[@"Crypto-Key"];
+            Assert.IsTrue(cryptoKey.StartsWith("p256ecdsa="));
+        }
+
+        [TestMethod]
+        public void TestDefaultEncodingIsAesGcm()
+        {
+            var publicKey = TestPublicKey;
+            var privateKey = TestPrivateKey;
+
+            // Default overload (no encoding parameter) uses AesGcm for backwards compatibility
+            var headersDefault = VapidHelper.GetVapidHeaders(ValidAudience, ValidSubject, publicKey, privateKey);
+            var headersAesGcm = VapidHelper.GetVapidHeaders(ValidAudience, ValidSubject, publicKey, privateKey,
+                -1, ContentEncoding.AesGcm);
+
+            // Both should have Crypto-Key header (legacy format)
+            Assert.IsTrue(headersDefault.ContainsKey(@"Crypto-Key"));
+            Assert.IsTrue(headersAesGcm.ContainsKey(@"Crypto-Key"));
+        }
     }
 }
