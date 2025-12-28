@@ -53,11 +53,8 @@ namespace WebPush.Test
         {
             var publicKey = TestPublicKey;
             var privateKey = TestPrivateKey;
-            Assert.ThrowsException<ArgumentException>(
-                delegate
-                {
-                    VapidHelper.GetVapidHeaders("invalid audience", ValidSubjectMailto, publicKey, privateKey);
-                });
+            Assert.Throws<ArgumentException>(
+                () => VapidHelper.GetVapidHeaders("invalid audience", ValidSubjectMailto, publicKey, privateKey));
         }
 
         [TestMethod]
@@ -66,8 +63,8 @@ namespace WebPush.Test
             var publicKey = UrlBase64.Encode(new byte[65]);
             var privateKey = UrlBase64.Encode(new byte[1]);
 
-            Assert.ThrowsException<ArgumentException>(
-                delegate { VapidHelper.GetVapidHeaders(ValidAudience, ValidSubject, publicKey, privateKey); });
+            Assert.Throws<ArgumentException>(
+                () => VapidHelper.GetVapidHeaders(ValidAudience, ValidSubject, publicKey, privateKey));
         }
 
         [TestMethod]
@@ -76,8 +73,8 @@ namespace WebPush.Test
             var publicKey = UrlBase64.Encode(new byte[1]);
             var privateKey = UrlBase64.Encode(new byte[32]);
 
-            Assert.ThrowsException<ArgumentException>(
-                delegate { VapidHelper.GetVapidHeaders(ValidAudience, ValidSubject, publicKey, privateKey); });
+            Assert.Throws<ArgumentException>(
+                () => VapidHelper.GetVapidHeaders(ValidAudience, ValidSubject, publicKey, privateKey));
         }
 
         [TestMethod]
@@ -86,8 +83,8 @@ namespace WebPush.Test
             var publicKey = TestPublicKey;
             var privateKey = TestPrivateKey;
 
-            Assert.ThrowsException<ArgumentException>(
-                delegate { VapidHelper.GetVapidHeaders(ValidAudience, @"invalid subject", publicKey, privateKey); });
+            Assert.Throws<ArgumentException>(
+                () => VapidHelper.GetVapidHeaders(ValidAudience, @"invalid subject", publicKey, privateKey));
         }
 
         [TestMethod]
@@ -108,12 +105,9 @@ namespace WebPush.Test
             var publicKey = TestPublicKey;
             var privateKey = TestPrivateKey;
 
-            Assert.ThrowsException<ArgumentException>(
-                delegate
-                {
-                    VapidHelper.GetVapidHeaders(ValidAudience, ValidSubjectMailto, publicKey,
-                        privateKey, 1552715607);
-                });
+            Assert.Throws<ArgumentException>(
+                () => VapidHelper.GetVapidHeaders(ValidAudience, ValidSubjectMailto, publicKey,
+                    privateKey, 1552715607));
         }
     }
 }

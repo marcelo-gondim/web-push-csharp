@@ -1,64 +1,63 @@
-﻿using System;
-using System.IO;
-using Org.BouncyCastle.Asn1;
-using Org.BouncyCastle.Asn1.Nist;
-using Org.BouncyCastle.Crypto;
-using Org.BouncyCastle.Crypto.Parameters;
-using Org.BouncyCastle.OpenSsl;
-using Org.BouncyCastle.Security;
+using System;
+using System.Security.Cryptography;
 
 namespace WebPush.Util
 {
     internal static class ECKeyHelper
     {
-        public static ECPrivateKeyParameters GetPrivateKey(byte[] privateKey)
+        /// <summary>
+        /// Parse raw 32-byte private key scalar and return ECDsa for signing
+        /// </summary>
+        public static ECDsa GetPrivateKeyForSigning(byte[] privateKey)
         {
-            Asn1Object version = new DerInteger(1);
-            Asn1Object derEncodedKey = new DerOctetString(privateKey);
-            Asn1Object keyTypeParameters = new DerTaggedObject(0, new DerObjectIdentifier(@"1.2.840.10045.3.1.7"));
-
-            Asn1Object derSequence = new DerSequence(version, derEncodedKey, keyTypeParameters);
-
-            var base64EncodedDerSequence = Convert.ToBase64String(derSequence.GetDerEncoded());
-            var pemKey = "-----BEGIN EC PRIVATE KEY-----\n";
-            pemKey += base64EncodedDerSequence;
-            pemKey += "\n-----END EC PRIVATE KEY----";
-
-            var reader = new StringReader(pemKey);
-            var pemReader = new PemReader(reader);
-            var keyPair = (AsymmetricCipherKeyPair) pemReader.ReadObject();
-
-            return (ECPrivateKeyParameters) keyPair.Private;
+            var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            var parameters = new ECParameters
+            {
+                Curve = ECCurve.NamedCurves.nistP256,
+                D = privateKey
+            };
+            ecdsa.ImportParameters(parameters);
+            return ecdsa;
         }
 
-        public static ECPublicKeyParameters GetPublicKey(byte[] publicKey)
+        /// <summary>
+        /// Parse raw 65-byte uncompressed public key (0x04 + X + Y)
+        /// </summary>
+        public static ECDiffieHellman GetPublicKey(byte[] publicKey)
         {
-            Asn1Object keyTypeParameters = new DerSequence(new DerObjectIdentifier(@"1.2.840.10045.2.1"),
-                new DerObjectIdentifier(@"1.2.840.10045.3.1.7"));
-            Asn1Object derEncodedKey = new DerBitString(publicKey);
+            if (publicKey.Length != 65 || publicKey[0] != 0x04)
+                throw new ArgumentException("Invalid uncompressed P-256 public key");
 
-            Asn1Object derSequence = new DerSequence(keyTypeParameters, derEncodedKey);
-
-            var base64EncodedDerSequence = Convert.ToBase64String(derSequence.GetDerEncoded());
-            var pemKey = "-----BEGIN PUBLIC KEY-----\n";
-            pemKey += base64EncodedDerSequence;
-            pemKey += "\n-----END PUBLIC KEY-----";
-
-            var reader = new StringReader(pemKey);
-            var pemReader = new PemReader(reader);
-            var keyPair = pemReader.ReadObject();
-            return (ECPublicKeyParameters) keyPair;
+            var ecdh = ECDiffieHellman.Create();
+            var parameters = new ECParameters
+            {
+                Curve = ECCurve.NamedCurves.nistP256,
+                Q = new ECPoint
+                {
+                    X = publicKey[1..33],
+                    Y = publicKey[33..65]
+                }
+            };
+            ecdh.ImportParameters(parameters);
+            return ecdh;
         }
 
-        public static AsymmetricCipherKeyPair GenerateKeys()
+        /// <summary>
+        /// Generate ECDH P-256 key pair
+        /// </summary>
+        /// <returns>Tuple of (publicKeyBytes, privateKeyBytes, ecdhInstance)</returns>
+        public static (byte[] PublicKey, byte[] PrivateKey, ECDiffieHellman Ecdh) GenerateKeys()
         {
-            var ecParameters = NistNamedCurves.GetByName("P-256");
-            var ecSpec = new ECDomainParameters(ecParameters.Curve, ecParameters.G, ecParameters.N, ecParameters.H,
-                ecParameters.GetSeed());
-            var keyPairGenerator = GeneratorUtilities.GetKeyPairGenerator("ECDH");
-            keyPairGenerator.Init(new ECKeyGenerationParameters(ecSpec, new SecureRandom()));
+            var ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+            var parameters = ecdh.ExportParameters(true);
 
-            return keyPairGenerator.GenerateKeyPair();
+            // Uncompressed format: 0x04 + X (32 bytes) + Y (32 bytes)
+            var publicKey = new byte[65];
+            publicKey[0] = 0x04;
+            parameters.Q.X!.CopyTo(publicKey.AsSpan(1));
+            parameters.Q.Y!.CopyTo(publicKey.AsSpan(33));
+
+            return (publicKey, parameters.D!, ecdh);
         }
     }
 }

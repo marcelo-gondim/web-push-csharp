@@ -1,13 +1,8 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
-using Org.BouncyCastle.Crypto.Digests;
-using Org.BouncyCastle.Crypto.Engines;
-using Org.BouncyCastle.Crypto.Macs;
-using Org.BouncyCastle.Crypto.Modes;
-using Org.BouncyCastle.Crypto.Parameters;
-using Org.BouncyCastle.Security;
 
 namespace WebPush.Util
 {
@@ -26,38 +21,49 @@ namespace WebPush.Util
 
         public static EncryptionResult Encrypt(byte[] userKey, byte[] userSecret, byte[] payload)
         {
-            var salt = GenerateSalt(16);
-            var serverKeyPair = ECKeyHelper.GenerateKeys();
+            var salt = RandomNumberGenerator.GetBytes(16);
 
-            var ecdhAgreement = AgreementUtilities.GetBasicAgreement("ECDH");
-            ecdhAgreement.Init(serverKeyPair.Private);
+            // Generate ephemeral server key pair
+            var (serverPublicKey, _, serverEcdh) = ECKeyHelper.GenerateKeys();
 
-            var userPublicKey = ECKeyHelper.GetPublicKey(userKey);
-
-            var key = ecdhAgreement.CalculateAgreement(userPublicKey).ToByteArrayUnsigned();
-            var serverPublicKey = ((ECPublicKeyParameters) serverKeyPair.Public).Q.GetEncoded(false);
-
-            var prk = HKDF(userSecret, key, Encoding.UTF8.GetBytes("Content-Encoding: auth\0"), 32);
-            var cek = HKDF(salt, prk, CreateInfoChunk("aesgcm", userKey, serverPublicKey), 16);
-            var nonce = HKDF(salt, prk, CreateInfoChunk("nonce", userKey, serverPublicKey), 12);
-
-            var input = AddPaddingToInput(payload);
-            var encryptedMessage = EncryptAes(nonce, cek, input);
-
-            return new EncryptionResult
+            using (serverEcdh)
+            using (var userEcdh = ECKeyHelper.GetPublicKey(userKey))
             {
-                Salt = salt,
-                Payload = encryptedMessage,
-                PublicKey = serverPublicKey
-            };
+                // ECDH key agreement
+                var sharedSecret = serverEcdh.DeriveKeyMaterial(userEcdh.PublicKey);
+
+                // HKDF derivations
+                var authInfo = Encoding.UTF8.GetBytes("Content-Encoding: auth\0");
+                var prk = HKDF.DeriveKey(HashAlgorithmName.SHA256, sharedSecret, 32, userSecret, authInfo);
+
+                var cekInfo = CreateInfoChunk("aesgcm", userKey, serverPublicKey);
+                var cek = HKDF.DeriveKey(HashAlgorithmName.SHA256, prk, 16, salt, cekInfo);
+
+                var nonceInfo = CreateInfoChunk("nonce", userKey, serverPublicKey);
+                var nonce = HKDF.DeriveKey(HashAlgorithmName.SHA256, prk, 12, salt, nonceInfo);
+
+                var input = AddPaddingToInput(payload);
+                var encryptedMessage = EncryptAes(nonce, cek, input);
+
+                return new EncryptionResult
+                {
+                    Salt = salt,
+                    Payload = encryptedMessage,
+                    PublicKey = serverPublicKey
+                };
+            }
         }
 
-        private static byte[] GenerateSalt(int length)
+        private static byte[] EncryptAes(byte[] nonce, byte[] cek, byte[] plaintext)
         {
-            var salt = new byte[length];
-            var random = new Random();
-            random.NextBytes(salt);
-            return salt;
+            var ciphertext = new byte[plaintext.Length];
+            var tag = new byte[16]; // 128-bit auth tag
+
+            using var aesGcm = new AesGcm(cek, 16);
+            aesGcm.Encrypt(nonce, plaintext, ciphertext, tag);
+
+            // Concatenate ciphertext + tag (same format as BouncyCastle)
+            return ciphertext.Concat(tag).ToArray();
         }
 
         private static byte[] AddPaddingToInput(byte[] data)
@@ -66,43 +72,6 @@ namespace WebPush.Util
             Buffer.BlockCopy(ConvertInt(0), 0, input, 0, 2);
             Buffer.BlockCopy(data, 0, input, 0 + 2, data.Length);
             return input;
-        }
-
-        private static byte[] EncryptAes(byte[] nonce, byte[] cek, byte[] message)
-        {
-            var cipher = new GcmBlockCipher(new AesEngine());
-            var parameters = new AeadParameters(new KeyParameter(cek), 128, nonce);
-            cipher.Init(true, parameters);
-
-            //Generate Cipher Text With Auth Tag
-            var cipherText = new byte[cipher.GetOutputSize(message.Length)];
-            var len = cipher.ProcessBytes(message, 0, message.Length, cipherText, 0);
-            cipher.DoFinal(cipherText, len);
-
-            //byte[] tag = cipher.GetMac();
-            return cipherText;
-        }
-
-        public static byte[] HKDFSecondStep(byte[] key, byte[] info, int length)
-        {
-            var hmac = new HmacSha256(key);
-            var infoAndOne = info.Concat(new byte[] {0x01}).ToArray();
-            var result = hmac.ComputeHash(infoAndOne);
-
-            if (result.Length > length)
-            {
-                Array.Resize(ref result, length);
-            }
-
-            return result;
-        }
-
-        public static byte[] HKDF(byte[] salt, byte[] prk, byte[] info, int length)
-        {
-            var hmac = new HmacSha256(salt);
-            var key = hmac.ComputeHash(prk);
-
-            return HKDFSecondStep(key, info, length);
         }
 
         public static byte[] ConvertInt(int number)
@@ -125,26 +94,6 @@ namespace WebPush.Util
             output.AddRange(ConvertInt(senderPublicKey.Length));
             output.AddRange(senderPublicKey);
             return output.ToArray();
-        }
-    }
-
-    public class HmacSha256
-    {
-        private readonly HMac _hmac;
-
-        public HmacSha256(byte[] key)
-        {
-            _hmac = new HMac(new Sha256Digest());
-            _hmac.Init(new KeyParameter(key));
-        }
-
-        public byte[] ComputeHash(byte[] value)
-        {
-            var resBuf = new byte[_hmac.GetMacSize()];
-            _hmac.BlockUpdate(value, 0, value.Length);
-            _hmac.DoFinal(resBuf, 0);
-
-            return resBuf;
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Text;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WebPush.Util;
@@ -14,7 +14,6 @@ namespace WebPush.Test
         public void TestGenerateSignature()
         {
             var decodedPrivateKey = UrlBase64.Decode(TestPrivateKey);
-            var privateKey = ECKeyHelper.GetPrivateKey(decodedPrivateKey);
 
             var header = new Dictionary<string, object>();
             header.Add("typ", "JWT");
@@ -25,7 +24,7 @@ namespace WebPush.Test
             jwtPayload.Add("exp", 1);
             jwtPayload.Add("sub", "subject");
 
-            var signer = new JwsSigner(privateKey);
+            using var signer = new JwsSigner(decodedPrivateKey);
             var token = signer.GenerateSignature(header, jwtPayload);
 
             var tokenParts = token.Split('.');
@@ -45,8 +44,8 @@ namespace WebPush.Test
             var decodedSignature = UrlBase64.Decode(signature);
             var decodedSignatureLength = decodedSignature.Length;
 
-            var isSignatureLengthValid = decodedSignatureLength == 66 || decodedSignatureLength == 64;
-            Assert.AreEqual(true, isSignatureLengthValid);
+            // IEEE P1363 format always produces 64 bytes for P-256
+            Assert.AreEqual(64, decodedSignatureLength);
         }
     }
 }

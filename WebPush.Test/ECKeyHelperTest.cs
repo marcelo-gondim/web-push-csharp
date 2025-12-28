@@ -1,6 +1,6 @@
-﻿using System.Linq;
+using System.Linq;
+using System.Security.Cryptography;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using Org.BouncyCastle.Crypto.Parameters;
 using WebPush.Util;
 
 namespace WebPush.Test
@@ -16,41 +16,34 @@ namespace WebPush.Test
         [TestMethod]
         public void TestGenerateKeys()
         {
-            var keys = ECKeyHelper.GenerateKeys();
+            var (publicKey, privateKey, ecdh) = ECKeyHelper.GenerateKeys();
+            ecdh.Dispose();
 
-            var publicKey = ((ECPublicKeyParameters) keys.Public).Q.GetEncoded(false);
-            var privateKey = ((ECPrivateKeyParameters) keys.Private).D.ToByteArrayUnsigned();
-
-            var publicKeyLength = publicKey.Length;
-            var privateKeyLength = privateKey.Length;
-
-            Assert.AreEqual(65, publicKeyLength);
-            Assert.AreEqual(32, privateKeyLength);
+            Assert.AreEqual(65, publicKey.Length);
+            Assert.AreEqual(32, privateKey.Length);
         }
 
         [TestMethod]
         public void TestGenerateKeysNoCache()
         {
-            var keys1 = ECKeyHelper.GenerateKeys();
-            var keys2 = ECKeyHelper.GenerateKeys();
-
-            var publicKey1 = ((ECPublicKeyParameters) keys1.Public).Q.GetEncoded(false);
-            var privateKey1 = ((ECPrivateKeyParameters) keys1.Private).D.ToByteArrayUnsigned();
-
-            var publicKey2 = ((ECPublicKeyParameters) keys2.Public).Q.GetEncoded(false);
-            var privateKey2 = ((ECPrivateKeyParameters) keys2.Private).D.ToByteArrayUnsigned();
+            var (publicKey1, privateKey1, ecdh1) = ECKeyHelper.GenerateKeys();
+            var (publicKey2, privateKey2, ecdh2) = ECKeyHelper.GenerateKeys();
+            ecdh1.Dispose();
+            ecdh2.Dispose();
 
             Assert.IsFalse(publicKey1.SequenceEqual(publicKey2));
             Assert.IsFalse(privateKey1.SequenceEqual(privateKey2));
         }
 
         [TestMethod]
-        public void TestGetPrivateKey()
+        public void TestGetPrivateKeyForSigning()
         {
-            var privateKey = UrlBase64.Decode(TestPrivateKey);
-            var privateKeyParams = ECKeyHelper.GetPrivateKey(privateKey);
+            var privateKeyBytes = UrlBase64.Decode(TestPrivateKey);
+            using var ecdsa = ECKeyHelper.GetPrivateKeyForSigning(privateKeyBytes);
 
-            var importedPrivateKey = UrlBase64.Encode(privateKeyParams.D.ToByteArrayUnsigned());
+            // Verify we can export and the D parameter matches
+            var parameters = ecdsa.ExportParameters(true);
+            var importedPrivateKey = UrlBase64.Encode(parameters.D!);
 
             Assert.AreEqual(TestPrivateKey, importedPrivateKey);
         }
@@ -58,10 +51,17 @@ namespace WebPush.Test
         [TestMethod]
         public void TestGetPublicKey()
         {
-            var publicKey = UrlBase64.Decode(TestPublicKey);
-            var publicKeyParams = ECKeyHelper.GetPublicKey(publicKey);
+            var publicKeyBytes = UrlBase64.Decode(TestPublicKey);
+            using var ecdh = ECKeyHelper.GetPublicKey(publicKeyBytes);
 
-            var importedPublicKey = UrlBase64.Encode(publicKeyParams.Q.GetEncoded(false));
+            // Verify we can export and the Q point matches
+            var parameters = ecdh.ExportParameters(false);
+            var exportedPublicKey = new byte[65];
+            exportedPublicKey[0] = 0x04;
+            parameters.Q.X!.CopyTo(exportedPublicKey, 1);
+            parameters.Q.Y!.CopyTo(exportedPublicKey, 33);
+
+            var importedPublicKey = UrlBase64.Encode(exportedPublicKey);
 
             Assert.AreEqual(TestPublicKey, importedPublicKey);
         }

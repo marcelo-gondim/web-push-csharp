@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using Org.BouncyCastle.Crypto.Parameters;
 using WebPush.Util;
 
 namespace WebPush
@@ -12,16 +11,14 @@ namespace WebPush
         /// </summary>
         public static VapidDetails GenerateVapidKeys()
         {
-            var results = new VapidDetails();
+            var (publicKey, privateKey, ecdh) = ECKeyHelper.GenerateKeys();
+            ecdh.Dispose();
 
-            var keys = ECKeyHelper.GenerateKeys();
-            var publicKey = ((ECPublicKeyParameters) keys.Public).Q.GetEncoded(false);
-            var privateKey = ((ECPrivateKeyParameters) keys.Private).D.ToByteArrayUnsigned();
-
-            results.PublicKey = UrlBase64.Encode(publicKey);
-            results.PrivateKey = UrlBase64.Encode(ByteArrayPadLeft(privateKey, 32));
-
-            return results;
+            return new VapidDetails
+            {
+                PublicKey = UrlBase64.Encode(publicKey),
+                PrivateKey = UrlBase64.Encode(ByteArrayPadLeft(privateKey, 32))
+            };
         }
 
         /// <summary>
@@ -58,9 +55,7 @@ namespace WebPush
 
             var jwtPayload = new Dictionary<string, object> {{"aud", audience}, {"exp", expiration}, {"sub", subject}};
 
-            var signingKey = ECKeyHelper.GetPrivateKey(decodedPrivateKey);
-
-            var signer = new JwsSigner(signingKey);
+            using var signer = new JwsSigner(decodedPrivateKey);
             var token = signer.GenerateSignature(header, jwtPayload);
 
             var results = new Dictionary<string, string>
